@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fake News Detector — Demo</title>
+  <style>
+    :root {
+      --bg-dark: #0a1a3f;
+      --bg-light: #122a5f;
+      --card: rgba(255, 255, 255, 0.15);
+      --accent: #00b4ff;
+      --muted: #d1d5db;
+      --text: #ffffff;
+    }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(135deg, var(--bg-dark), var(--bg-light));
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* Background AI + Fake News images */
+    body::before, body::after {
+      content: "";
+      position: fixed;
+      top: 0; bottom: 0;
+      width: 50%;
+      opacity: 0.15;
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center;
+      z-index: -1;
+      filter: blur(3px);
+    }
+    body::before {
+      left: 0;
+      background-image: url('https://cdn.pixabay.com/photo/2023/01/27/10/19/artificial-intelligence-7747471_1280.jpg');
+    }
+    body::after {
+      right: 0;
+      background-image: url('https://cdn.pixabay.com/photo/2020/04/09/09/28/fake-news-5013119_1280.jpg');
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 60px auto;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      padding: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+    p.lead {
+      color: var(--muted);
+      margin: 0 0 18px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 14px;
+      resize: vertical;
+      outline: none;
+    }
+
+    textarea::placeholder {
+      color: #a8b3c7;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+      align-items: center;
+    }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    button:hover {
+      background: #0095e0;
+      transform: scale(1.03);
+    }
+
+    button[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 20px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .badge {
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .fake {
+      background: #ff4b4b;
+      color: white;
+    }
+
+    .real {
+      background: #00c78b;
+      color: white;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tokens {
+      margin-top: 12px;
+    }
+
+    .token {
+      display: inline-block;
+      padding: 6px 8px;
+      border-radius: 999px;
+      margin: 4px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.05);
+      font-size: 13px;
+      color: #e2e8f0;
+    }
+
+    .footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>🧠 Fake News Detector</h1>
+      <p class="lead">Paste news headline or article text below and click <strong>Detect</strong>.</p>
+
+      <textarea id="newsText" placeholder="Type or paste the news text here..."></textarea>
+
+      <div class="controls">
+        <button id="detectBtn">Detect</button>
+        <label class="small" style="margin-left:auto">
+          <input type="checkbox" id="mockToggle" /> Use mock response (no backend)
+        </label>
+      </div>
+
+      <div id="output" class="result" aria-live="polite" style="display:none">
+        <div id="labelBadge" class="badge"></div>
+        <div>
+          <div class="meta">Confidence: <span id="confidence">0.00</span></div>
+          <div class="meta" id="explainText"></div>
+        </div>
+      </div>
+
+      <div id="tokens" class="tokens" style="display:none"></div>
+
+      <div class="footer">
+        <div>Backend endpoint: <code>/predict</code> (POST JSON: <code>{"text":"..."}</code>)</div>
+        <div style="margin-top:6px" class="small">Expected backend JSON response: 
+          <code>{ "label":"FAKE", "confidence":0.92, "top_tokens":[["word",0.32]] }</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const detectBtn = document.getElementById('detectBtn');
+    const newsText = document.getElementById('newsText');
+    const output = document.getElementById('output');
+    const labelBadge = document.getElementById('labelBadge');
+    const confidenceEl = document.getElementById('confidence');
+    const explainText = document.getElementById('explainText');
+    const tokensDiv = document.getElementById('tokens');
+    const mockToggle = document.getElementById('mockToggle');
+
+    function showResult(data){
+      output.style.display = 'flex';
+      const label = (data.label || '').toUpperCase();
+      const conf = typeof data.confidence === 'number' ? data.confidence : (data.confidence && data.confidence[0] ? data.confidence[0] : 0);
+      confidenceEl.textContent = (conf * 100).toFixed(1) + '%';
+      if(label === 'FAKE' || label === '1'){
+        labelBadge.textContent = 'FAKE';
+        labelBadge.className = 'badge fake';
+      } else {
+        labelBadge.textContent = 'REAL';
+        labelBadge.className = 'badge real';
+      }
+      explainText.textContent = data.explanation ? data.explanation : '';
+      tokensDiv.innerHTML = '';
+      if(Array.isArray(data.top_tokens) && data.top_tokens.length){
+        tokensDiv.style.display = 'block';
+        data.top_tokens.slice(0,12).forEach(t=>{
+          const el = document.createElement('span');
+          el.className = 'token';
+          el.textContent = `${t[0]} (${(t[1]).toFixed(3)})`;
+          tokensDiv.appendChild(el);
+        });
+      } else {
+        tokensDiv.style.display = 'none';
+      }
+    }
+
+    async function callPredictBackend(text){
+      const res = await fetch('/predict', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({text})
+      });
+      if(!res.ok){
+        const txt = await res.text();
+        throw new Error('Server error: ' + res.status + ' — ' + txt);
+      }
+      return res.json();
+    }
+
+    function mockResponse(text){
+   const lower = text.toLowerCase();
+   
+let label = 'REAL';
+let conf = .95;
+let top_tokens = [['government',0.12],['shocking',0.09],['unbelievable',0.08]];
+
+if(lower.includes('shocking') || lower.includes('unbelievable') || lower.includes('exclusive') || lower.includes('miracle') || lower.includes('won') || lower.includes('corrupt')) {
+  label = 'FAKE';
+  conf = .99;
+  top_tokens = [['shocking',0.45],['exclusive',0.21],['miracle',0.11]];
+}
+
+return {label, confidence: conf, top_tokens};
+
+    }
+
+    detectBtn.addEventListener('click', async ()=>{
+      const text = newsText.value.trim();
+      if(!text){
+        alert('Please enter some text to analyze.');
+        return;
+      }
+
+      detectBtn.disabled = true;
+      detectBtn.textContent = 'Checking...';
+      output.style.display = 'none';
+      tokensDiv.style.display = 'none';
+
+      try{
+        let data;
+        if(mockToggle.checked){
+          await new Promise(r=>setTimeout(r,600));
+          data = mockResponse(text);
+        } else {
+          data = await callPredictBackend(text);
+        }
+        showResult(data);
+      } catch(err){
+        alert('Error: ' + (err.message || err));
+        console.error(err);
+      } finally {
+        detectBtn.disabled = false;
+        detectBtn.textContent = 'Detect';
+      }
+    });
+  </script>
+</body>
+</html>
